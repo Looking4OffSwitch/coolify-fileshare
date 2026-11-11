@@ -205,11 +205,74 @@ LOGIN_HTML = """<!doctype html><html lang=en><meta charset=utf-8><meta name=view
 <main><h1>Fileshare</h1><p>Owner sign in</p>{% if error %}<p class=error>{{ error }}</p>{% endif %}<form method=post action=/login><label>Password<input name=password type=password autocomplete=current-password required></label><button>Sign in</button></form></main></html>"""
 
 HOME_HTML = """<!doctype html><html lang=en><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>
-<title>Fileshare</title><style>body{font:16px system-ui;background:#f5f7fb;color:#17243b;margin:0}main{max-width:850px;margin:3rem auto;padding:0 1rem}header{display:flex;justify-content:space-between;align-items:center}section{background:white;padding:1.5rem;margin:1.5rem 0;border-radius:14px;box-shadow:0 5px 20px #1231}button{background:#2156bd;color:white;border:0;border-radius:8px;padding:.7rem 1rem;cursor:pointer}input[type=file]{display:block;margin:1rem 0}input.url{width:100%;box-sizing:border-box;padding:.6rem;margin:.4rem 0}article{border-top:1px solid #ddd;padding:1rem 0}small{color:#52627a}.danger{background:#a22}.error{color:#a22}</style>
-<main><header><h1>Fileshare</h1><form method=post action=/logout><input type=hidden name=csrf_token value='{{ csrf }}'><button>Sign out</button></form></header>
-<section><h2>Upload a file</h2><p>Maximum {{ max_mb }} MB. Anyone with the link can download the file.</p><form id=upload><input type=file name=file required><button>Upload</button></form><p id=status role=status></p><div id=result hidden><input class=url id=share-url readonly aria-label='Share URL'><button id=copy>Copy link</button></div></section>
-<section><h2>Active shares</h2>{% for s in shares %}<article><strong>{{ s.filename }}</strong><br><small>{{ s.size }} bytes · SHA-256 {{ s.sha256 }}</small><input class=url readonly value='{{ s.url }}' aria-label='Share URL for {{ s.filename }}'><form method=post action='/shares/{{ s.id }}/delete'><input type=hidden name=csrf_token value='{{ csrf }}'><button class=danger>Remove share</button></form></article>{% else %}<p>No active shares.</p>{% endfor %}</section></main>
-<script>const f=document.querySelector('#upload'),s=document.querySelector('#status'),r=document.querySelector('#result'),u=document.querySelector('#share-url');f.addEventListener('submit',async e=>{e.preventDefault();s.textContent='Uploading…';r.hidden=true;try{const x=await fetch('/api/uploads',{method:'POST',headers:{'X-CSRF-Token':'{{ csrf }}'},body:new FormData(f)}),j=await x.json();if(!x.ok)throw Error(j.message||'Upload failed');u.value=j.url;r.hidden=false;s.textContent='Upload complete: '+j.size+' bytes · SHA-256 '+j.sha256}catch(err){s.textContent=err.message}});document.querySelector('#copy').addEventListener('click',()=>navigator.clipboard.writeText(u.value));</script></html>"""
+<title>Fileshare</title>
+<style>
+body{font:16px system-ui;background:#f5f7fb;color:#17243b;margin:0}
+main{max-width:850px;margin:3rem auto;padding:0 1rem}
+header{display:flex;justify-content:space-between;align-items:center}
+section{background:white;padding:1.5rem;margin:1.5rem 0;border-radius:14px;box-shadow:0 5px 20px #1231}
+button{background:#2156bd;color:white;border:0;border-radius:8px;padding:.7rem 1rem;cursor:pointer}
+input[type=file]{display:block;margin:1rem 0}
+.share-link{display:flex;align-items:center;gap:.5rem;margin:.5rem 0}
+input.url{flex:1;min-width:0;box-sizing:border-box;padding:.6rem;font:inherit}
+.copy-link{display:inline-flex;align-items:center;gap:.4rem;white-space:nowrap}
+.copy-link svg{width:18px;height:18px}
+article{border-top:1px solid #ddd;padding:1rem 0}
+small{color:#52627a}.danger{background:#a22}.error{color:#a22}
+</style>
+{% macro copy_button(label) -%}
+<button type=button class=copy-link aria-label='Copy share URL for {{ label }}'>
+  <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill=none stroke=currentColor stroke-width=2 stroke-linecap=round stroke-linejoin=round aria-hidden=true>
+    <rect width=14 height=14 x=8 y=8 rx=2 ry=2></rect>
+    <path d='M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'></path>
+  </svg>
+  <span class=copy-label aria-live=polite>Copy link</span>
+</button>
+{%- endmacro %}
+<main>
+<header><h1>Fileshare</h1><form method=post action=/logout><input type=hidden name=csrf_token value='{{ csrf }}'><button>Sign out</button></form></header>
+<section>
+  <h2>Upload a file</h2>
+  <p>Maximum {{ max_mb }} MB. Anyone with the link can download the file.</p>
+  <form id=upload><input type=file name=file required><button>Upload</button></form>
+  <p id=status role=status></p>
+  <div id=result hidden><div class=share-link><input class=url id=share-url readonly aria-label='Share URL'>{{ copy_button('new upload') }}</div></div>
+</section>
+<section>
+  <h2>Active shares</h2>
+  {% for s in shares %}
+  <article>
+    <strong>{{ s.filename }}</strong><br>
+    <small>{{ s.size }} bytes · SHA-256 {{ s.sha256 }}</small>
+    <div class=share-link><input class=url readonly value='{{ s.url }}' aria-label='Share URL for {{ s.filename }}'>{{ copy_button(s.filename) }}</div>
+    <form method=post action='/shares/{{ s.id }}/delete'><input type=hidden name=csrf_token value='{{ csrf }}'><button class=danger>Remove share</button></form>
+  </article>
+  {% else %}<p>No active shares.</p>{% endfor %}
+</section>
+</main>
+<script>
+const f=document.querySelector('#upload'),s=document.querySelector('#status'),r=document.querySelector('#result'),u=document.querySelector('#share-url');
+f.addEventListener('submit',async e=>{
+  e.preventDefault();s.textContent='Uploading…';r.hidden=true;
+  try{
+    const x=await fetch('/api/uploads',{method:'POST',headers:{'X-CSRF-Token':'{{ csrf }}'},body:new FormData(f)}),j=await x.json();
+    if(!x.ok)throw Error(j.message||'Upload failed');
+    u.value=j.url;r.hidden=false;s.textContent='Upload complete: '+j.size+' bytes · SHA-256 '+j.sha256;
+  }catch(err){s.textContent=err.message}
+});
+document.querySelectorAll('.copy-link').forEach(button=>button.addEventListener('click',async()=>{
+  const input=button.parentElement.querySelector('input.url'),label=button.querySelector('.copy-label');
+  try{
+    let copied=false;
+    if(navigator.clipboard?.writeText){try{await navigator.clipboard.writeText(input.value);copied=true}catch(err){}}
+    if(!copied){input.focus();input.select();copied=document.execCommand('copy')}
+    if(!copied)throw Error('Copy failed');
+    label.textContent='Copied!';
+  }catch(err){input.focus();input.select();label.textContent='Select and copy'}
+  clearTimeout(button.resetTimer);
+  button.resetTimer=setTimeout(()=>{label.textContent='Copy link'},2500);
+}));
+</script></html>"""
 
 
 app = create_app()
